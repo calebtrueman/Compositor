@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.calebtrueman.Compositor</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Compositor</name>
+  <summary>Free, open-source image editor for compositing and photo work</summary>
+  <developer id="io.github.calebtrueman">
+    <name>Caleb Trueman</name>
+  </developer>
+  <description>
+    <p>
+      Compositor is a layer-based image editor built around a Photoshop-style compositing
+      workflow: layers and folders with every Photoshop blend mode, layer masks, clipping masks,
+      adjustment layers, non-destructive transforms, selections and painting tools.
+    </p>
+    <p>
+      This is the Linux edition of the macOS app by Robbie Tilton. It opens and saves the same
+      .comp projects, so work moves freely between the two.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.calebtrueman.Compositor.desktop</launchable>
+  <url type="homepage">https://github.com/calebtrueman/Compositor</url>
+  <url type="bugtracker">https://github.com/calebtrueman/Compositor/issues</url>
+  <content_rating type="oars-1.1"/>
+  <provides>
+    <binary>compositor</binary>
+  </provides>
+  <releases>
+    <release version="1.4.5" date="2026-10-01"/>
+  </releases>
+</component>

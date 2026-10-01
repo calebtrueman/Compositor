@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Compositor
+GenericName=Image Editor
+Comment=Free, open-source image editor for compositing and photo work
+Exec=compositor %F
+Icon=io.github.calebtrueman.Compositor
+Terminal=false
+Categories=Graphics;2DGraphics;RasterGraphics;Photography;
+Keywords=photo;image;editor;layers;photoshop;compositing;psd;
+MimeType=image/png;image/jpeg;image/tiff;image/webp;image/bmp;image/gif;image/vnd.adobe.photoshop;application/x-compositor-project;
+StartupNotify=true
+StartupWMClass=io.github.calebtrueman.Compositor

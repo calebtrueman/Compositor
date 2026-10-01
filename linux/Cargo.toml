@@ -1,0 +1,42 @@
+[package]
+name = "compositor"
+version = "1.4.5"
+edition = "2021"
+description = "A free, open-source Photoshop-style image editor for compositing and photo work"
+license = "MIT"
+repository = "https://github.com/calebtrueman/Compositor"
+homepage = "https://github.com/calebtrueman/Compositor"
+authors = ["Robbie Tilton", "Caleb Trueman"]
+readme = "../README.md"
+rust-version = "1.85"
+
+[dependencies]
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "wayland", "x11", "persistence"] }
+egui = "0.36"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "tiff", "webp", "bmp", "gif", "rayon"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+rayon = "1"
+tiny-skia = "0.12"
+egui-file-dialog = "0.15"
+anyhow = "1"
+directories = "6"
+psd = "0.3"
+ab_glyph = "0.2"
+fontdb = "0.24"
+rand = "0.9"
+arboard = { version = "3", features = ["wayland-data-control"] }
+egui-phosphor = "0.14"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
