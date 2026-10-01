@@ -152,13 +152,19 @@ pub fn composite_layers(doc: &Document, region: Region, cache: &RenderCache, unt
         if !visible || opacity <= 0.0 {
             continue;
         }
-        let coverage = Coverage::new(doc, layer, work, cache);
+        let mut coverage = Coverage::new(doc, layer, work, cache);
         if let Some(adjustment) = &layer.adjustment {
             apply_adjustment_layer(layer, adjustment, &mut buf, work, opacity, &coverage);
         } else if layer.image.is_some() || layer.text.is_some() {
             let Some(mut src) = place_layer(layer, work, cache) else { continue };
             if let Some(effects) = &layer.effects {
-                src = crate::effects::apply(effects, src, work);
+                // Effects follow the masked shape, and their sizes are in layer pixels.
+                if let Some(own) = &coverage.own_mask {
+                    apply_mask(&mut src, own, work);
+                }
+                let effect_region = Region { scale: work.scale / layer_scale(layer), ..work };
+                src = crate::effects::apply(effects, src, effect_region);
+                coverage.own_mask = None;
             }
             blend_buffer(layer, &src, &mut buf, work, opacity, &coverage);
         }
@@ -181,7 +187,7 @@ fn sampling_margin(doc: &Document, scale: f64) -> usize {
             total += crate::adjust::sampling_margin(adjustment);
         }
         if let Some(effects) = &layer.effects {
-            total += crate::effects::margin(effects);
+            total += crate::effects::margin(effects) * layer_scale(layer);
         }
     }
     (total / scale).ceil().min(4096.0) as usize
@@ -226,20 +232,17 @@ pub fn place_layer(layer: &Layer, region: Region, cache: &RenderCache) -> Option
 
 /// Mask, folder masks and clipping coverage of one layer over a region, multiplied together.
 pub struct Coverage {
+    /// The layer's own mask, kept apart so effects can be drawn from the masked pixels.
+    pub own_mask: Option<Sampler>,
+    /// Masks of enclosing folders.
     pub masks: Vec<(Sampler, bool)>,
     pub clip: Option<Vec<f32>>,
 }
 
 impl Coverage {
     pub fn new(doc: &Document, layer: &Layer, region: Region, cache: &RenderCache) -> Coverage {
+        let own_mask = layer.mask.as_ref().filter(|m| m.enabled).and_then(|m| mask_sampler(layer, m, region, cache)).map(|(s, _)| s);
         let mut masks = Vec::new();
-        if let Some(mask) = &layer.mask {
-            if mask.enabled {
-                if let Some(s) = mask_sampler(layer, mask, region, cache) {
-                    masks.push(s);
-                }
-            }
-        }
         for ancestor in doc.ancestors(layer.id) {
             if let Some(folder) = doc.layer(ancestor) {
                 if let Some(mask) = folder.mask.as_ref().filter(|m| m.enabled) {
@@ -250,17 +253,17 @@ impl Coverage {
             }
         }
         let clip = layer.clip_source.map(|source| clip_alpha(doc, source, region, cache, 0));
-        Coverage { masks, clip }
+        Coverage { own_mask, masks, clip }
     }
 
     pub fn is_full(&self) -> bool {
-        self.masks.is_empty() && self.clip.is_none()
+        self.own_mask.is_none() && self.masks.is_empty() && self.clip.is_none()
     }
 
     /// Coverage for one row, multiplied into `row`.
     pub fn apply_row(&self, region: Region, j: usize, row: &mut [f32]) {
         let mut scratch = vec![[0.0f32; 4]; row.len()];
-        for (sampler, _) in &self.masks {
+        for sampler in self.own_mask.iter().chain(self.masks.iter().map(|(s, _)| s)) {
             sampler.sample_row(region, j, &mut scratch);
             for (r, s) in row.iter_mut().zip(&scratch) {
                 // Masks are gray images expanded to RGBA; a mask outside its rectangle hides.
@@ -283,6 +286,30 @@ fn mask_sampler(layer: &Layer, mask: &LayerMask, region: Region, cache: &RenderC
         MaskPixels::Pixels(gray) => Sampler::gray(gray, &transform, region.scale, cache)?,
     };
     Some((sampler, true))
+}
+
+/// Multiplies premultiplied pixels by a mask's coverage.
+fn apply_mask(buf: &mut Buffer, mask: &Sampler, region: Region) {
+    let width = buf.width;
+    buf.px.par_chunks_mut(width).enumerate().for_each(|(j, row)| {
+        let mut coverage = vec![[0.0f32; 4]; width];
+        mask.sample_row(region, j, &mut coverage);
+        for (p, c) in row.iter_mut().zip(&coverage) {
+            for v in p.iter_mut() {
+                *v *= c[0];
+            }
+        }
+    });
+}
+
+/// Document pixels per layer pixel (the geometric mean of both axes), so effect sizes, which
+/// are in layer pixels, grow and shrink with the layer.
+fn layer_scale(layer: &Layer) -> f64 {
+    let Some(image) = &layer.image else { return 1.0 };
+    let sx = layer.transform.size[0] / image.width().max(1) as f64;
+    let sy = layer.transform.size[1] / image.height().max(1) as f64;
+    let k = (sx * sy).sqrt();
+    if k.is_finite() && k > 0.0 { k } else { 1.0 }
 }
 
 /// The alpha a clipping base contributes: its pixels, opacity, mask and its own clipping.
