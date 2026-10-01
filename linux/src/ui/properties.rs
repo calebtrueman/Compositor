@@ -32,6 +32,10 @@ pub fn show(ui: &mut egui::Ui, project: &mut Project, colors: &mut Colors, cache
     if !layer.is_group {
         transform_ui(ui, project);
     }
+    if layer.shape.is_some() {
+        ui.separator();
+        crate::tools::shape::properties_ui(ui, project);
+    }
     if layer.is_text() {
         ui.separator();
         crate::text::properties_ui(ui, project, colors, cache);

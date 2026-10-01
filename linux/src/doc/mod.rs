@@ -124,6 +124,7 @@ pub struct Guide {
 }
 
 /// Opaque JSON kept as written so fields this build doesn't edit survive a save.
+#[allow(dead_code)]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct RawRecord(pub Map<String, Value>);
 
@@ -171,7 +172,7 @@ pub struct Layer {
     pub adjustment: Option<Adjustment>,
     pub effects: Option<crate::effects::LayerEffects>,
     pub text: Option<crate::text::TextStyle>,
-    pub shape: Option<RawRecord>,
+    pub shape: Option<crate::tools::shape::ShapeStyle>,
     /// Session-only: whether the folder is expanded in the Layers panel.
     pub expanded: bool,
     /// Manifest fields this build doesn't understand, written back unchanged.
