@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::adjust::Adjustment;
-use crate::doc::{BlendMode, Document, Guide, Id, Layer, LayerMask, LayerTransform, MaskPixels, RawRecord};
+use crate::doc::{BlendMode, Document, Guide, Id, Layer, LayerMask, LayerTransform, MaskPixels};
 
 pub const FORMAT: &str = "com.compositor.project";
 pub const CURRENT_VERSION: i64 = 11;
@@ -82,7 +82,7 @@ struct LayerRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     mask_linked: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    shape: Option<RawRecord>,
+    shape: Option<crate::tools::shape::ShapeStyle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     effects: Option<crate::effects::LayerEffects>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
