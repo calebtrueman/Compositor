@@ -446,7 +446,7 @@ impl Document {
     }
 
     pub fn unique_name(&self, base: &str) -> String {
-        let mut n = self.layers.len() + 1;
+        let mut n = 1;
         loop {
             let name = format!("{base} {n}");
             if !self.layers.iter().any(|l| l.name == name) {

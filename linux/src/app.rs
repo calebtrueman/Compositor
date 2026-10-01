@@ -349,7 +349,17 @@ impl App {
         let shift_cmd = Modifiers::COMMAND | Modifiers::SHIFT;
         let alt_cmd = Modifiers::COMMAND | Modifiers::ALT;
         let shortcut = |m: Modifiers, k: Key| KeyboardShortcut::new(m, k);
-        let pressed = |s: KeyboardShortcut| ctx.input_mut(|i| i.consume_shortcut(&s));
+        // egui ignores extra Shift and Alt when matching; shortcuts here need the exact modifiers,
+        // so Ctrl+Shift+N doesn't also count as Ctrl+N.
+        let pressed = |s: KeyboardShortcut| {
+            ctx.input_mut(|i| {
+                let exact = i.events.iter().any(|e| {
+                    matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. }
+                        if *key == s.logical_key && same_modifiers(*modifiers, s.modifiers))
+                });
+                exact && i.consume_shortcut(&s)
+            })
+        };
 
         if pressed(shortcut(cmd, Key::N)) {
             self.dialog = Some(Box::new(dialogs::NewDocumentDialog::default()));
@@ -904,6 +914,10 @@ impl App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
+}
+
+fn same_modifiers(a: Modifiers, b: Modifiers) -> bool {
+    a.alt == b.alt && a.shift == b.shift && (a.command || a.ctrl) == (b.command || b.ctrl)
 }
 
 /// Adds `image` as a layer above the active one: at `origin` when given, otherwise centered and

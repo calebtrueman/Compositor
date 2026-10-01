@@ -370,3 +370,54 @@ fn apply_adjustment_layer(
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::doc::{BlendMode, Layer, LayerTransform};
+
+    fn doc_with_layers() -> Document {
+        let mut doc = Document::new(4000, 3000, Some([200, 100, 50, 255]));
+        let mut top = Layer::new_pixel("Top", RgbaImage::from_pixel(3000, 2000, image::Rgba([10, 200, 90, 180])), LayerTransform::rect(500.0, 500.0, 3000.0, 2000.0));
+        top.blend = BlendMode::Multiply;
+        doc.layers.push(top);
+        let mut rotated = Layer::new_pixel("Rotated", RgbaImage::from_pixel(1000, 1000, image::Rgba([0, 0, 255, 255])), LayerTransform::rect(100.0, 100.0, 1500.0, 1500.0));
+        rotated.transform.rotation = 30.0;
+        rotated.opacity = 0.5;
+        doc.layers.push(rotated);
+        doc
+    }
+
+    #[test]
+    fn composites_expected_colors() {
+        let doc = doc_with_layers();
+        let cache = RenderCache::default();
+        let region = Region { x: 0, y: 0, width: 4, height: 4, scale: 1.0 };
+        let out = composite(&doc, region, &cache);
+        let p = out.get(0, 0);
+        assert!((p[0] - 200.0 / 255.0).abs() < 0.01 && (p[3] - 1.0).abs() < 1e-6);
+        let region = Region { x: 3400, y: 2400, width: 1, height: 1, scale: 1.0 };
+        let p = composite(&doc, region, &cache).get(0, 0);
+        // Multiply at 180/255 alpha over orange.
+        let a = 180.0 / 255.0;
+        let expected_g = (100.0 / 255.0) * (1.0 - a) + (100.0 / 255.0 * 200.0 / 255.0) * a;
+        assert!((p[1] - expected_g).abs() < 0.01, "{p:?}");
+    }
+
+    #[test]
+    #[ignore]
+    fn composite_speed() {
+        let doc = doc_with_layers();
+        let cache = RenderCache::default();
+        let start = std::time::Instant::now();
+        let out = composite(&doc, Region::full(&doc), &cache);
+        println!("full 4000×3000, 3 layers: {:?}", start.elapsed());
+        assert_eq!(out.width, 4000);
+        let start = std::time::Instant::now();
+        composite(&doc, Region { x: 0, y: 0, width: 1000, height: 750, scale: 4.0 }, &cache);
+        println!("quarter-scale view: {:?}", start.elapsed());
+        let start = std::time::Instant::now();
+        composite(&doc, Region { x: 1024, y: 1024, width: 256, height: 256, scale: 1.0 }, &cache);
+        println!("one 256 tile: {:?}", start.elapsed());
+    }
+}
