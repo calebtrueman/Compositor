@@ -82,6 +82,9 @@ name = "compositor-image-editor"
 release = "1"
 summary = "Free, open-source image editor for compositing and photo work"
 url = "https://github.com/calebtrueman/Compositor"
+# Automatic discovery would turn Rust std's weakly bound glibc symbols into "(GLIBC_x)[WEAK]"
+# requirements that no distribution provides, so the requirements are all listed below.
+auto-req = "no"
 assets = [
   { source = "target/release/compositor", dest = "/usr/bin/compositor", mode = "755" },
   { source = "packaging/io.github.calebtrueman.Compositor.desktop", dest = "/usr/share/applications/io.github.calebtrueman.Compositor.desktop", mode = "644" },
@@ -100,6 +103,10 @@ assets = [
 # Written as sonames so one .rpm resolves on Fedora, RHEL/Rocky/Alma and openSUSE, whose
 # package names for these libraries differ.
 [package.metadata.generate-rpm.requires]
+"libc.so.6()(64bit)" = "*"
+"libc.so.6(GLIBC_2.30)(64bit)" = "*"
+"libm.so.6()(64bit)" = "*"
+"libgcc_s.so.1()(64bit)" = "*"
 "libGL.so.1()(64bit)" = "*"
 "libEGL.so.1()(64bit)" = "*"
 "libxkbcommon.so.0()(64bit)" = "*"
