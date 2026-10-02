@@ -1103,11 +1103,12 @@ impl eframe::App for App {
         if !self.projects.is_empty() {
             egui::Panel::right("panels").default_size(300.0).min_size(240.0).show(ui, |ui| {
                 let project = self.projects.get_mut(self.current).unwrap();
-                egui::Panel::top("properties").resizable(true).default_size(400.0).show(ui, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        properties::show(ui, project, &mut self.colors, &self.cache);
-                    });
+                // Properties take up to half the sidebar and scroll; Layers get the rest.
+                let height = (ui.available_height() * 0.5).max(160.0);
+                egui::ScrollArea::vertical().id_salt("properties").max_height(height).auto_shrink([false, true]).show(ui, |ui| {
+                    properties::show(ui, project, &mut self.colors, &self.cache);
                 });
+                ui.separator();
                 ui.heading("Layers");
                 self.layers_panel.show(ui, project, &self.cache, &mut self.open_adjustment);
             });
