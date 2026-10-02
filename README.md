@@ -17,6 +17,10 @@ Get Compositor from [robbietilton.com/compositor](https://robbietilton.com/compo
 brew install --cask robbietilton-compositor
 ```
 
+### Linux
+
+This fork adds a native Linux edition — see [Linux](#linux) below for packages for every major distribution.
+
 ## Features
 
 ### Layers
@@ -95,6 +99,102 @@ It needs, all kept outside this repository:
 - a **Developer ID Application** certificate in the login keychain
 - notarization credentials saved with `xcrun notarytool store-credentials "compositor-notary" …`
 - [`create-dmg`](https://github.com/create-dmg/create-dmg) (`brew install create-dmg`)
+
+## Linux
+
+This fork ([calebtrueman/Compositor](https://github.com/calebtrueman/Compositor)) adds Compositor for Linux, a native rewrite in Rust that lives in [`linux/`](linux/) ([architecture](linux/ARCHITECTURE.md)). It runs on X11 and Wayland, on x86_64 and ARM64 (aarch64), and needs only OpenGL — Mesa or your GPU vendor's driver.
+
+It opens and saves the same `.comp` projects as the macOS app, so a project can move between a Mac and a Linux machine and keep its layers, folders, masks, blend modes, adjustment layers and transforms. It also opens PNG, JPEG, TIFF, WebP, BMP, GIF and Photoshop PSD files. The Linux edition is a newer port and does not yet have every feature listed above for the macOS app.
+
+### Install
+
+Download the file for your distribution from the [latest release](https://github.com/calebtrueman/Compositor/releases/latest). In the commands below, replace `X.Y.Z` with the version, and `x86_64`/`amd64` with `aarch64`/`arm64` on an ARM machine. Every format installs the `compositor` command and a **Compositor** entry in your app menu.
+
+**Debian, Ubuntu, Linux Mint, Pop!_OS, elementary OS, Zorin OS** (`.deb`)
+
+```sh
+sudo apt install ./compositor-image-editor_X.Y.Z-1_amd64.deb
+```
+
+**Fedora, RHEL, Rocky Linux, AlmaLinux** (`.rpm`)
+
+```sh
+sudo dnf install ./compositor-image-editor-X.Y.Z-1.x86_64.rpm
+```
+
+**openSUSE Tumbleweed and Leap** (`.rpm`)
+
+```sh
+sudo zypper install --allow-unsigned-rpm ./compositor-image-editor-X.Y.Z-1.x86_64.rpm
+```
+
+**Arch Linux, EndeavourOS, Manjaro** (`.pkg.tar.zst`, x86_64)
+
+```sh
+sudo pacman -U ./compositor-image-editor-bin-X.Y.Z-1-x86_64.pkg.tar.zst
+```
+
+A source PKGBUILD for the AUR (`compositor-image-editor`) is in [`linux/packaging/arch/`](linux/packaging/arch/); on ARM, build it with `makepkg -si` there.
+
+**Flatpak** (any distribution)
+
+```sh
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user ./Compositor-X.Y.Z-x86_64.flatpak
+flatpak run io.github.calebtrueman.Compositor
+```
+
+The Flatpak can read and write your home folder and removable drives.
+
+**AppImage** (any distribution, nothing to install)
+
+```sh
+chmod +x Compositor-X.Y.Z-x86_64.AppImage
+./Compositor-X.Y.Z-x86_64.AppImage
+```
+
+If your system has no FUSE (some containers and minimal installs), run it with `APPIMAGE_EXTRACT_AND_RUN=1 ./Compositor-X.Y.Z-x86_64.AppImage`.
+
+**Anything else** (`.tar.gz`)
+
+```sh
+tar xf compositor-image-editor-X.Y.Z-linux-x86_64.tar.gz
+cd compositor-image-editor-X.Y.Z-linux-x86_64
+./install.sh            # into ~/.local; or `sudo ./install.sh` for /usr/local
+```
+
+`./install.sh --uninstall` removes it again. You can also run `./bin/compositor` without installing.
+
+To check a download, put `SHA256SUMS` from the release beside it and run `sha256sum -c SHA256SUMS --ignore-missing`.
+
+The packaged builds need glibc 2.31 or newer: Debian 11, Ubuntu 20.04, Fedora 32, RHEL 9, openSUSE Leap 15.3 or anything later.
+
+### Build from source
+
+Install Rust 1.85 or newer from [rustup.rs](https://rustup.rs), plus a C toolchain and the X11/Wayland/OpenGL development files:
+
+| Distribution | Command |
+| --- | --- |
+| Debian, Ubuntu and derivatives | `sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libegl1-mesa-dev` |
+| Fedora, RHEL-family | `sudo dnf install gcc pkgconf-pkg-config libxkbcommon-devel libxkbcommon-x11-devel wayland-devel libX11-devel libXcursor-devel libXrandr-devel libXi-devel mesa-libGL-devel mesa-libEGL-devel` |
+| openSUSE | `sudo zypper install gcc pkgconf libxkbcommon-devel libxkbcommon-x11-devel wayland-devel libX11-devel libXcursor-devel libXrandr-devel libXi-devel Mesa-libGL-devel Mesa-libEGL-devel` |
+| Arch Linux | `sudo pacman -S --needed base-devel rust libxkbcommon libxkbcommon-x11 wayland libx11 libxcursor libxrandr libxi libglvnd` |
+
+Then:
+
+```sh
+cd linux
+cargo build --release
+./target/release/compositor
+```
+
+To install the build system-wide with its menu entry, icons and `.comp` file type:
+
+```sh
+sudo bash packaging/scripts/stage.sh target/release/compositor "" /usr/local
+```
+
+How the Linux packages are built and released is described in [`linux/packaging/README.md`](linux/packaging/README.md).
 
 ## License
 
