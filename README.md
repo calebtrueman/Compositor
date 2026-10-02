@@ -106,6 +106,12 @@ This fork ([calebtrueman/Compositor](https://github.com/calebtrueman/Compositor)
 
 It opens and saves the same `.comp` projects as the macOS app, so a project can move between a Mac and a Linux machine and keep its layers, folders, masks, blend modes, adjustment layers and transforms. It also opens PNG, JPEG, TIFF, WebP, BMP, GIF and Photoshop PSD files. The Linux edition is a newer port and does not yet have every feature listed above for the macOS app.
 
+![Compositor for Linux: a night scene with layers, a folder, a glowing moon and a Curves adjustment layer](linux/docs/screenshots/layers-and-effects.png)
+
+| Adjustment layers | Editable text |
+| --- | --- |
+| ![Editing a Curves adjustment layer in the Properties panel](linux/docs/screenshots/curves.png) | ![Typing on the canvas with the Type tool](linux/docs/screenshots/type-tool.png) |
+
 ### Install
 
 Download the file for your distribution from the [latest release](https://github.com/calebtrueman/Compositor/releases/latest). In the commands below, replace `X.Y.Z` with the version, and `x86_64`/`amd64` with `aarch64`/`arm64` on an ARM machine. Every format installs the `compositor` command and a **Compositor** entry in your app menu.
