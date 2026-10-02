@@ -1103,7 +1103,7 @@ impl eframe::App for App {
         if !self.projects.is_empty() {
             egui::Panel::right("panels").default_size(300.0).min_size(240.0).show(ui, |ui| {
                 let project = self.projects.get_mut(self.current).unwrap();
-                egui::Panel::top("properties").resizable(true).default_size(240.0).show(ui, |ui| {
+                egui::Panel::top("properties").resizable(true).default_size(400.0).show(ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         properties::show(ui, project, &mut self.colors, &self.cache);
                     });
