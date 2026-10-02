@@ -16,6 +16,7 @@ pub mod paint;
 pub mod paint_bucket;
 pub mod shape;
 pub mod spot_healing;
+pub mod type_tool;
 
 use egui::{Color32, CursorIcon, Key, Modifiers, Painter};
 
@@ -154,6 +155,7 @@ impl Tools {
             Box::new(blur::BlurTool::default()),
             Box::new(gradient::GradientTool::default()),
             Box::new(paint_bucket::PaintBucketTool::default()),
+            Box::new(type_tool::TypeTool::default()),
             Box::new(shape::ShapeTool::default()),
             Box::new(hand::HandTool),
             Box::new(hand::ZoomTool),
