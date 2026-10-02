@@ -426,6 +426,11 @@ impl App {
             let (w, h) = (project.doc.width, project.doc.height);
             project.edit("Select All", |doc| doc.selection = Some(Selection::all(w, h)));
         }
+        if pressed(shortcut(shift_cmd, Key::D)) && project.doc.selection.is_none() {
+            if let Some(selection) = project.last_selection.clone().filter(|s| s.mask.dimensions() == (project.doc.width, project.doc.height)) {
+                project.edit("Reselect", |doc| doc.selection = Some(selection));
+            }
+        }
         if pressed(shortcut(cmd, Key::D)) && project.doc.selection.is_some() {
             project.edit("Deselect", |doc| doc.selection = None);
         }

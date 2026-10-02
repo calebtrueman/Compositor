@@ -3,10 +3,14 @@
 pub mod blur;
 pub mod brush;
 pub mod clone_stamp;
+pub mod crop;
 pub mod eraser;
 pub mod eyedropper;
 pub mod gradient;
 pub mod hand;
+pub mod lasso;
+pub mod magic_wand;
+pub mod marquee;
 pub mod move_tool;
 pub mod paint;
 pub mod paint_bucket;
@@ -138,6 +142,10 @@ impl Tools {
     pub fn new() -> Self {
         let list: Vec<Box<dyn Tool>> = vec![
             Box::new(move_tool::MoveTool::default()),
+            Box::new(marquee::MarqueeTool::default()),
+            Box::new(lasso::LassoTool::default()),
+            Box::new(magic_wand::MagicWandTool::default()),
+            Box::new(crop::CropTool::default()),
             Box::new(eyedropper::Eyedropper::default()),
             Box::new(spot_healing::SpotHealingTool::default()),
             Box::new(brush::BrushTool::default()),

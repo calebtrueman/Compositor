@@ -33,6 +33,8 @@ pub struct Project {
     pub disk_digest: Option<u64>,
     /// A newer fingerprint seen on disk and when (seconds), reloaded once writes settle.
     pub pending_digest: Option<(u64, f64)>,
+    /// The selection most recently cleared by an edit, for Select > Reselect.
+    pub last_selection: Option<crate::doc::Selection>,
 }
 
 impl Project {
@@ -48,6 +50,7 @@ impl Project {
             pending_edit: None,
             disk_digest: None,
             pending_digest: None,
+            last_selection: None,
         }
     }
 
@@ -73,8 +76,15 @@ impl Project {
 
     /// Records the current state for undo under `name`, then runs `edit`. Everything redraws.
     pub fn edit<R>(&mut self, name: &str, edit: impl FnOnce(&mut Document) -> R) -> R {
+        let before = self.doc.selection.clone();
         self.history.push(name, self.doc.clone());
         let result = edit(&mut self.doc);
+        if self.doc.selection.is_none() {
+            // Remember what Deselect (or anything else) cleared, while it still fits the canvas.
+            if let Some(selection) = before.filter(|s| s.mask.dimensions() == (self.doc.width, self.doc.height)) {
+                self.last_selection = Some(selection);
+            }
+        }
         self.invalidate_all();
         result
     }
