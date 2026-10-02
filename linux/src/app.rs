@@ -57,6 +57,9 @@ pub struct App {
     allow_quit: bool,
     hovered_doc: Option<(f64, f64)>,
     open_adjustment: Option<crate::adjust::AdjustmentKind>,
+    /// A project with unsaved edits that also changed on disk, waiting for the person to choose.
+    external_change: Option<usize>,
+    last_watch: f64,
 }
 
 const RECENT_KEY: &str = "recent-files";
@@ -96,6 +99,8 @@ impl App {
             allow_quit: false,
             hovered_doc: None,
             open_adjustment: None,
+            external_change: None,
+            last_watch: 0.0,
         };
         for file in files {
             app.open_path(&file);
@@ -118,7 +123,9 @@ impl App {
                 let is_project = io::comp::is_project(path);
                 let title = root.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Untitled".into());
                 let mut project = Project::new(doc, is_project.then(|| root.clone()), title);
-                if !is_project {
+                if is_project {
+                    project.disk_digest = io::watch::digest(&root);
+                } else {
                     // An imported image becomes a new, unsaved project.
                     project.history.mark_unsaved();
                 }
@@ -187,6 +194,8 @@ impl App {
                 project.path = Some(path.clone());
                 project.title = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
                 project.history.mark_saved();
+                project.disk_digest = io::watch::digest(&path);
+                project.pending_digest = None;
                 self.status = Some(format!("Saved {}", path.display()));
                 self.add_recent(path);
             }
@@ -853,6 +862,101 @@ impl App {
         }
     }
 
+    /// Reloads projects that changed on disk once writes have settled for a third of a second.
+    /// With unsaved edits of their own, the person chooses which version to keep.
+    fn watch_projects(&mut self, ctx: &egui::Context) {
+        let now = ctx.input(|i| i.time);
+        if self.projects.iter().any(|p| p.path.is_some()) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(400));
+        }
+        if now - self.last_watch < 0.3 {
+            return;
+        }
+        self.last_watch = now;
+        for index in 0..self.projects.len() {
+            let project = &mut self.projects[index];
+            let Some(path) = project.path.clone() else { continue };
+            if project.pending_edit.is_some() {
+                continue;
+            }
+            let Some(digest) = io::watch::digest(&path) else { continue };
+            if project.disk_digest == Some(digest) {
+                project.pending_digest = None;
+                continue;
+            }
+            match project.pending_digest {
+                Some((pending, since)) if pending == digest && now - since >= 0.3 => {
+                    project.pending_digest = None;
+                    if project.is_dirty() {
+                        if self.external_change.is_none() {
+                            self.external_change = Some(index);
+                        }
+                    } else {
+                        self.reload(index, digest);
+                    }
+                }
+                Some((pending, _)) if pending == digest => {}
+                _ => project.pending_digest = Some((digest, now)),
+            }
+        }
+    }
+
+    /// Replaces a project with what's on disk, keeping the view and selection; undo starts over.
+    fn reload(&mut self, index: usize, digest: u64) {
+        let project = &mut self.projects[index];
+        let Some(path) = project.path.clone() else { return };
+        // A write that fails to load is ignored until the next change.
+        project.disk_digest = Some(digest);
+        let Ok(mut doc) = io::comp::load(&path) else { return };
+        doc.selection = project.doc.selection.take().filter(|s| s.mask.dimensions() == (doc.width, doc.height));
+        if let Some(active) = project.doc.active.filter(|a| doc.layer(*a).is_some()) {
+            doc.active = Some(active);
+        }
+        for layer in &mut doc.layers {
+            if let Some(old) = project.doc.layer(layer.id) {
+                layer.expanded = old.expanded;
+            }
+        }
+        project.doc = doc;
+        project.history.clear();
+        project.invalidate_all();
+    }
+
+    fn external_change_prompt(&mut self, ctx: &egui::Context) {
+        let Some(index) = self.external_change else { return };
+        let Some(project) = self.projects.get(index) else {
+            self.external_change = None;
+            return;
+        };
+        let title = project.title.clone();
+        let mut choice = None;
+        egui::Modal::new(egui::Id::new("external-change")).show(ctx, |ui| {
+            ui.set_max_width(440.0);
+            ui.heading(format!("“{title}” changed on disk"));
+            ui.label("Another program changed this project while you had unsaved changes. Use the version on disk, or keep yours?");
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("Keep Mine").clicked() {
+                    choice = Some(false);
+                }
+                if ui.button("Revert to Disk").clicked() {
+                    choice = Some(true);
+                }
+            });
+        });
+        if let Some(revert) = choice {
+            self.external_change = None;
+            let path = self.projects[index].path.clone();
+            if let Some(digest) = path.as_deref().and_then(io::watch::digest) {
+                if revert {
+                    self.reload(index, digest);
+                } else {
+                    self.projects[index].disk_digest = Some(digest);
+                }
+            }
+        }
+    }
+
     fn unsaved_prompt(&mut self, ctx: &egui::Context) {
         let Some(index) = self.closing else { return };
         let Some(project) = self.projects.get(index) else {
@@ -1047,6 +1151,8 @@ impl eframe::App for App {
             }
         }
         self.unsaved_prompt(ctx);
+        self.watch_projects(ctx);
+        self.external_change_prompt(ctx);
 
         if let Some(error) = self.error.clone() {
             egui::Modal::new(egui::Id::new("error")).show(ctx, |ui| {

@@ -1,5 +1,6 @@
 pub mod comp;
 pub mod psd;
+pub mod watch;
 
 use std::fs;
 use std::io::Cursor;

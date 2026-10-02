@@ -29,6 +29,10 @@ pub struct Project {
     pub dirty: Vec<Option<DocRect>>,
     /// Set while a multi-step edit (a stroke, a drag) is in progress.
     pub pending_edit: Option<String>,
+    /// Fingerprint of the project as last read or written, to notice changes made by others.
+    pub disk_digest: Option<u64>,
+    /// A newer fingerprint seen on disk and when (seconds), reloaded once writes settle.
+    pub pending_digest: Option<(u64, f64)>,
 }
 
 impl Project {
@@ -42,6 +46,8 @@ impl Project {
             target: EditTarget::Image,
             dirty: vec![None],
             pending_edit: None,
+            disk_digest: None,
+            pending_digest: None,
         }
     }
 
