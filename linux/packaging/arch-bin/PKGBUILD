@@ -1,0 +1,30 @@
+# Maintainer: Caleb Trueman <calebtrueman at users dot noreply dot github dot com>
+#
+# Prebuilt package: repackages the release tarball (built on Ubuntu 20.04, glibc 2.31). CI
+# builds the release's .pkg.tar.zst from this file with the tarball already in place; it is also
+# suitable for the AUR as compositor-image-editor-bin (run `updpkgsums` after bumping pkgver).
+pkgname=compositor-image-editor-bin
+_name=compositor-image-editor
+pkgver=1.4.5
+pkgrel=1
+pkgdesc='Free, open-source Photoshop-style image editor for compositing and photo work (prebuilt)'
+arch=('x86_64' 'aarch64')
+url='https://github.com/calebtrueman/Compositor'
+license=('MIT')
+# GL/EGL, X11, Wayland and xkbcommon are loaded with dlopen at runtime.
+depends=('gcc-libs' 'glibc' 'hicolor-icon-theme' 'libglvnd' 'libx11' 'libxcursor' 'libxi'
+         'libxkbcommon' 'libxkbcommon-x11' 'libxrandr' 'wayland')
+provides=("$_name=$pkgver")
+conflicts=("$_name")
+options=('!strip' '!debug')
+source_x86_64=("$url/releases/download/v$pkgver/$_name-$pkgver-linux-x86_64.tar.gz")
+source_aarch64=("$url/releases/download/v$pkgver/$_name-$pkgver-linux-aarch64.tar.gz")
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+
+package() {
+  cd "$srcdir/$_name-$pkgver-linux-$CARCH"
+  install -Dm755 bin/compositor "$pkgdir/usr/bin/compositor"
+  cp -r --no-preserve=ownership share "$pkgdir/usr/"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

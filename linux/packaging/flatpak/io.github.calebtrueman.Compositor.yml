@@ -1,0 +1,35 @@
+# Flatpak manifest. It packages the prebuilt release tarball, which the release workflow (or
+# linux/packaging/scripts/package.sh) produces and copies here as compositor-prebuilt.tar.gz:
+#
+#   flatpak-builder --user --install-deps-from=flathub --repo=repo --force-clean build \
+#     io.github.calebtrueman.Compositor.yml
+#   flatpak build-bundle repo Compositor.flatpak io.github.calebtrueman.Compositor \
+#     --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
+#
+# A Flathub submission would instead build from source with vendored crates
+# (flatpak-cargo-generator); see linux/packaging/README.md.
+id: io.github.calebtrueman.Compositor
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: compositor
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # The file dialogs are drawn in-app (not portals), so they need direct access to where
+  # images and projects live.
+  - --filesystem=home
+  - --filesystem=/media
+  - --filesystem=/run/media
+modules:
+  - name: compositor
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 bin/compositor /app/bin/compositor
+      - cp -r share /app/
+      - install -Dm644 LICENSE /app/share/licenses/io.github.calebtrueman.Compositor/LICENSE
+    sources:
+      - type: archive
+        path: compositor-prebuilt.tar.gz

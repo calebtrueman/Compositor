@@ -40,3 +40,77 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# ---------------------------------------------------------------------------------------------
+# Linux packaging (see packaging/README.md). The distro package is `compositor-image-editor`,
+# since on Linux "compositor" usually means a window compositor; the command stays `compositor`.
+# eframe/winit/glutin load GL, EGL, X11, Wayland and xkbcommon with dlopen, so those libraries
+# never appear in the binary's NEEDED entries and are listed here by hand.
+
+[package.metadata.deb]
+name = "compositor-image-editor"
+maintainer = "Caleb Trueman <calebtrueman@users.noreply.github.com>"
+copyright = "2026 Wonder Assembly LLC; Linux edition by Caleb Trueman"
+license-file = ["../LICENSE", "0"]
+extended-description = """\
+Compositor is a layer-based image editor built around a Photoshop-style compositing \
+workflow: layers and folders with every Photoshop blend mode, layer masks, clipping masks, \
+adjustment layers, non-destructive transforms, selections and painting tools. It opens and \
+saves the same .comp projects as the macOS app."""
+section = "graphics"
+priority = "optional"
+revision = "1"
+depends = "$auto, libgl1, libegl1, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libxcursor1, libxrandr2, libxi6, libwayland-client0, libwayland-cursor0, libwayland-egl1"
+recommends = "hicolor-icon-theme, shared-mime-info, desktop-file-utils"
+assets = [
+  ["target/release/compositor", "usr/bin/", "755"],
+  ["packaging/io.github.calebtrueman.Compositor.desktop", "usr/share/applications/", "644"],
+  ["packaging/io.github.calebtrueman.Compositor.metainfo.xml", "usr/share/metainfo/", "644"],
+  ["packaging/compositor-project.xml", "usr/share/mime/packages/io.github.calebtrueman.Compositor.xml", "644"],
+  ["assets/app-icon-16.png", "usr/share/icons/hicolor/16x16/apps/io.github.calebtrueman.Compositor.png", "644"],
+  ["assets/app-icon-32.png", "usr/share/icons/hicolor/32x32/apps/io.github.calebtrueman.Compositor.png", "644"],
+  ["assets/app-icon-64.png", "usr/share/icons/hicolor/64x64/apps/io.github.calebtrueman.Compositor.png", "644"],
+  ["assets/app-icon-128.png", "usr/share/icons/hicolor/128x128/apps/io.github.calebtrueman.Compositor.png", "644"],
+  ["assets/app-icon-256.png", "usr/share/icons/hicolor/256x256/apps/io.github.calebtrueman.Compositor.png", "644"],
+  ["assets/app-icon-512.png", "usr/share/icons/hicolor/512x512/apps/io.github.calebtrueman.Compositor.png", "644"],
+  ["../README.md", "usr/share/doc/compositor-image-editor/README.md", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "compositor-image-editor"
+release = "1"
+summary = "Free, open-source image editor for compositing and photo work"
+url = "https://github.com/calebtrueman/Compositor"
+assets = [
+  { source = "target/release/compositor", dest = "/usr/bin/compositor", mode = "755" },
+  { source = "packaging/io.github.calebtrueman.Compositor.desktop", dest = "/usr/share/applications/io.github.calebtrueman.Compositor.desktop", mode = "644" },
+  { source = "packaging/io.github.calebtrueman.Compositor.metainfo.xml", dest = "/usr/share/metainfo/io.github.calebtrueman.Compositor.metainfo.xml", mode = "644" },
+  { source = "packaging/compositor-project.xml", dest = "/usr/share/mime/packages/io.github.calebtrueman.Compositor.xml", mode = "644" },
+  { source = "assets/app-icon-16.png", dest = "/usr/share/icons/hicolor/16x16/apps/io.github.calebtrueman.Compositor.png", mode = "644" },
+  { source = "assets/app-icon-32.png", dest = "/usr/share/icons/hicolor/32x32/apps/io.github.calebtrueman.Compositor.png", mode = "644" },
+  { source = "assets/app-icon-64.png", dest = "/usr/share/icons/hicolor/64x64/apps/io.github.calebtrueman.Compositor.png", mode = "644" },
+  { source = "assets/app-icon-128.png", dest = "/usr/share/icons/hicolor/128x128/apps/io.github.calebtrueman.Compositor.png", mode = "644" },
+  { source = "assets/app-icon-256.png", dest = "/usr/share/icons/hicolor/256x256/apps/io.github.calebtrueman.Compositor.png", mode = "644" },
+  { source = "assets/app-icon-512.png", dest = "/usr/share/icons/hicolor/512x512/apps/io.github.calebtrueman.Compositor.png", mode = "644" },
+  { source = "../LICENSE", dest = "/usr/share/licenses/compositor-image-editor/LICENSE", mode = "644", doc = true },
+  { source = "../README.md", dest = "/usr/share/doc/compositor-image-editor/README.md", mode = "644", doc = true },
+]
+
+# Written as sonames so one .rpm resolves on Fedora, RHEL/Rocky/Alma and openSUSE, whose
+# package names for these libraries differ.
+[package.metadata.generate-rpm.requires]
+"libGL.so.1()(64bit)" = "*"
+"libEGL.so.1()(64bit)" = "*"
+"libxkbcommon.so.0()(64bit)" = "*"
+"libxkbcommon-x11.so.0()(64bit)" = "*"
+"libX11.so.6()(64bit)" = "*"
+"libXcursor.so.1()(64bit)" = "*"
+"libXrandr.so.2()(64bit)" = "*"
+"libXi.so.6()(64bit)" = "*"
+"libwayland-client.so.0()(64bit)" = "*"
+"libwayland-cursor.so.0()(64bit)" = "*"
+"libwayland-egl.so.1()(64bit)" = "*"
+
+[package.metadata.generate-rpm.recommends]
+hicolor-icon-theme = "*"
+shared-mime-info = "*"
