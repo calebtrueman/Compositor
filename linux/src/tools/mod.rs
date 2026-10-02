@@ -1,7 +1,11 @@
 //! Canvas tools. Each tool is a `Tool` in its own file; `Tools::new` lists them in toolbar order.
 
+pub mod crop;
 pub mod eyedropper;
 pub mod hand;
+pub mod lasso;
+pub mod magic_wand;
+pub mod marquee;
 pub mod move_tool;
 
 use egui::{Color32, CursorIcon, Key, Modifiers, Painter};
@@ -129,6 +133,10 @@ impl Tools {
     pub fn new() -> Self {
         let list: Vec<Box<dyn Tool>> = vec![
             Box::new(move_tool::MoveTool::default()),
+            Box::new(marquee::MarqueeTool::default()),
+            Box::new(lasso::LassoTool::default()),
+            Box::new(magic_wand::MagicWandTool::default()),
+            Box::new(crop::CropTool::default()),
             Box::new(eyedropper::Eyedropper::default()),
             Box::new(hand::HandTool),
             Box::new(hand::ZoomTool),

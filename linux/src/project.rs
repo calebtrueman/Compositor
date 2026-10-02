@@ -29,6 +29,8 @@ pub struct Project {
     pub dirty: Vec<Option<DocRect>>,
     /// Set while a multi-step edit (a stroke, a drag) is in progress.
     pub pending_edit: Option<String>,
+    /// The selection most recently cleared by an edit, for Select > Reselect.
+    pub last_selection: Option<crate::doc::Selection>,
 }
 
 impl Project {
@@ -42,6 +44,7 @@ impl Project {
             target: EditTarget::Image,
             dirty: vec![None],
             pending_edit: None,
+            last_selection: None,
         }
     }
 
@@ -67,8 +70,15 @@ impl Project {
 
     /// Records the current state for undo under `name`, then runs `edit`. Everything redraws.
     pub fn edit<R>(&mut self, name: &str, edit: impl FnOnce(&mut Document) -> R) -> R {
+        let before = self.doc.selection.clone();
         self.history.push(name, self.doc.clone());
         let result = edit(&mut self.doc);
+        if self.doc.selection.is_none() {
+            // Remember what Deselect (or anything else) cleared, while it still fits the canvas.
+            if let Some(selection) = before.filter(|s| s.mask.dimensions() == (self.doc.width, self.doc.height)) {
+                self.last_selection = Some(selection);
+            }
+        }
         self.invalidate_all();
         result
     }
