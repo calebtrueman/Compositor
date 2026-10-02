@@ -377,6 +377,32 @@ fn apply_adjustment_layer(
     crate::adjust::apply(adjustment, &mut straight, region);
     let width = buf.width;
     let mode = layer.blend;
+    if adjustment.changes_alpha() {
+        // A blur spreads coverage too: mix toward the adjusted pixels, alpha included.
+        buf.px.par_chunks_mut(width).zip(straight.px.par_chunks(width)).enumerate().for_each(|(j, (drow, arow))| {
+            let mut cov = vec![opacity; width];
+            if !coverage.is_full() {
+                coverage.apply_row(region, j, &mut cov);
+            }
+            for ((d, a), c) in drow.iter_mut().zip(arow).zip(&cov) {
+                if *c <= 0.0 {
+                    continue;
+                }
+                let aa = a[3].clamp(0.0, 1.0);
+                let adjusted = [a[0].clamp(0.0, 1.0), a[1].clamp(0.0, 1.0), a[2].clamp(0.0, 1.0)];
+                let ab = d[3];
+                let base = if ab > 0.0 { [d[0] / ab, d[1] / ab, d[2] / ab] } else { adjusted };
+                let mixed = if ab > 0.0 { blend::blend(mode, base, adjusted) } else { adjusted };
+                let alpha = ab + (aa - ab) * c;
+                for i in 0..3 {
+                    // Premultiplied mix of the base and the (blended) adjusted pixel.
+                    d[i] = d[i] + (mixed[i] * aa - d[i]) * c;
+                }
+                d[3] = alpha;
+            }
+        });
+        return;
+    }
     buf.px.par_chunks_mut(width).zip(straight.px.par_chunks(width)).enumerate().for_each(|(j, (drow, arow))| {
         let mut cov = vec![opacity; width];
         if !coverage.is_full() {
