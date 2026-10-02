@@ -1,0 +1,46 @@
+# Maintainer: Caleb Trueman <calebtrueman at users dot noreply dot github dot com>
+#
+# Source package for the AUR, built from the release tag. Named compositor-image-editor because
+# "compositor" alone reads as a Wayland/X11 compositor; the command it installs is `compositor`.
+# For a release: bump pkgver, reset pkgrel=1, run `updpkgsums` and `makepkg --printsrcinfo > .SRCINFO`.
+pkgname=compositor-image-editor
+pkgver=1.4.5
+pkgrel=1
+pkgdesc='Free, open-source Photoshop-style image editor for compositing and photo work'
+arch=('x86_64' 'aarch64')
+url='https://github.com/calebtrueman/Compositor'
+license=('MIT')
+# GL/EGL, X11, Wayland and xkbcommon are loaded with dlopen at runtime.
+depends=('gcc-libs' 'glibc' 'hicolor-icon-theme' 'libglvnd' 'libx11' 'libxcursor' 'libxi'
+         'libxkbcommon' 'libxkbcommon-x11' 'libxrandr' 'wayland')
+makedepends=('cargo')
+conflicts=('compositor-image-editor-bin')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "Compositor-$pkgver/linux"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "Compositor-$pkgver/linux"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$srcdir=/build"
+  cargo build --frozen --release
+}
+
+check() {
+  cd "Compositor-$pkgver/linux"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo test --frozen --release
+}
+
+package() {
+  cd "Compositor-$pkgver/linux"
+  bash packaging/scripts/stage.sh target/release/compositor "$pkgdir" /usr
+  install -Dm644 ../LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

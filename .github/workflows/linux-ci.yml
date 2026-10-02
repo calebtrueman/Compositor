@@ -1,0 +1,88 @@
+name: Linux CI
+
+on:
+  push:
+    paths:
+      - 'linux/**'
+      - '.github/workflows/linux-ci.yml'
+      - '.github/workflows/linux-release.yml'
+  pull_request:
+    paths:
+      - 'linux/**'
+      - '.github/workflows/linux-ci.yml'
+      - '.github/workflows/linux-release.yml'
+
+concurrency:
+  group: linux-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: build, test, clippy
+    # Push covers same-repo branches. pull_request runs only for forks, so a PR is not tested twice.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: linux
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config \
+            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libegl1-mesa-dev
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            linux/target
+          key: linux-ci-${{ runner.os }}-${{ hashFiles('linux/Cargo.lock') }}
+          restore-keys: linux-ci-${{ runner.os }}-
+
+      - name: Build
+        run: cargo build --locked --all-targets
+
+      - name: Test
+        run: cargo test --locked
+
+      # Warnings are reported but do not fail the job yet.
+      - name: Clippy
+        run: cargo clippy --locked --all-targets
+
+  packaging:
+    name: packaging files
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install validators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends desktop-file-utils appstream shellcheck
+
+      - name: Validate the desktop entry and AppStream metadata
+        run: |
+          desktop-file-validate linux/packaging/io.github.calebtrueman.Compositor.desktop
+          appstreamcli validate --no-net --explain linux/packaging/io.github.calebtrueman.Compositor.metainfo.xml
+
+      - name: Lint packaging scripts
+        run: shellcheck linux/packaging/scripts/*.sh
