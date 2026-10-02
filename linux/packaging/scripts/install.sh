@@ -29,11 +29,17 @@ SIZES="16 32 64 128 256 512"
 FILES="bin/compositor share/applications/$APP_ID.desktop share/metainfo/$APP_ID.metainfo.xml share/mime/packages/$APP_ID.xml"
 for s in $SIZES; do FILES="$FILES share/icons/hicolor/${s}x${s}/apps/$APP_ID.png"; done
 
+# Cache refreshes are best effort: a missing tool or a failed refresh never fails the install.
 refresh() {
-  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "$PREFIX/share/applications" 2>/dev/null || true
-  command -v update-mime-database >/dev/null 2>&1 && update-mime-database "$PREFIX/share/mime" 2>/dev/null || true
-  command -v gtk-update-icon-cache >/dev/null 2>&1 && [ -f "$PREFIX/share/icons/hicolor/index.theme" ] \
-    && gtk-update-icon-cache -q -t "$PREFIX/share/icons/hicolor" 2>/dev/null || true
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q "$PREFIX/share/applications" 2>/dev/null || true
+  fi
+  if command -v update-mime-database >/dev/null 2>&1; then
+    update-mime-database "$PREFIX/share/mime" 2>/dev/null || true
+  fi
+  if command -v gtk-update-icon-cache >/dev/null 2>&1 && [ -f "$PREFIX/share/icons/hicolor/index.theme" ]; then
+    gtk-update-icon-cache -q -t "$PREFIX/share/icons/hicolor" 2>/dev/null || true
+  fi
 }
 
 if [ "$UNINSTALL" -eq 1 ]; then
