@@ -156,9 +156,9 @@ jobs:
           VERSION: ${{ needs.meta.outputs.version }}
         run: |
           set -eu
-          # pacman's Landlock download sandbox fails under some container runtimes; this
-          # container is throwaway, so turn it off.
-          grep -q '^DisableSandbox' /etc/pacman.conf || sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+          # pacman's download sandbox (a separate user, Landlock, seccomp) fails under some
+          # container runtimes; this container is throwaway, so turn it off.
+          sed -i -e 's/^DownloadUser/#DownloadUser/' -e 's/^#DisableSandbox/DisableSandbox/' /etc/pacman.conf
           pacman -Syu --noconfirm --needed base-devel pacman-contrib
           useradd -m builder
           mkdir /tmp/pkg
