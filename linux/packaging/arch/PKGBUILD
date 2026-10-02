@@ -28,6 +28,7 @@ build() {
   cd "Compositor-$pkgver/linux"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
+  export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$srcdir=/build"
   cargo build --frozen --release
 }
 
