@@ -377,6 +377,9 @@ impl App {
         }
         let tool_busy = self.tools.current().captures_keyboard();
         if !tool_busy {
+            crate::filters::shortcuts(ctx, &mut self.menu_ctx());
+        }
+        if !tool_busy {
             if pressed(shortcut(shift_cmd, Key::Z)) || pressed(shortcut(cmd, Key::Y)) {
                 if let Some(p) = self.project() {
                     p.redo();
