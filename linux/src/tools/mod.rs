@@ -3,6 +3,7 @@
 pub mod eyedropper;
 pub mod hand;
 pub mod move_tool;
+pub mod type_tool;
 
 use egui::{Color32, CursorIcon, Key, Modifiers, Painter};
 
@@ -130,6 +131,7 @@ impl Tools {
         let list: Vec<Box<dyn Tool>> = vec![
             Box::new(move_tool::MoveTool::default()),
             Box::new(eyedropper::Eyedropper::default()),
+            Box::new(type_tool::TypeTool::default()),
             Box::new(hand::HandTool),
             Box::new(hand::ZoomTool),
         ];
