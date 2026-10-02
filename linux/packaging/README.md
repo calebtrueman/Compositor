@@ -14,11 +14,11 @@ The scripts also run on their own, so a release can be reproduced locally with D
 4. Commit, then tag and push:
 
    ```sh
-   git tag vX.Y.Z
-   git push origin vX.Y.Z
+   git tag linux-vX.Y.Z
+   git push origin linux-vX.Y.Z
    ```
 
-The tag must equal `v` + the Cargo.toml version, or the workflow stops at its first job. The
+The tag must equal `linux-v` + the Cargo.toml version (plain `vX.Y.Z` tags belong to the upstream macOS releases), or the workflow stops at its first job. The
 workflow then:
 
 | Job | Runs on | Produces |
@@ -32,7 +32,7 @@ workflow then:
 
 Running the workflow by hand (**Actions → Linux release → Run workflow**) builds everything as
 workflow artifacts without releasing; tick **publish** to also create a *draft* release for
-`v<version>`.
+`linux-v<version>`.
 
 ### Release assets
 

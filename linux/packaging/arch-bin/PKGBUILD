@@ -17,8 +17,8 @@ depends=('gcc-libs' 'glibc' 'hicolor-icon-theme' 'libglvnd' 'libx11' 'libxcursor
 provides=("$_name=$pkgver")
 conflicts=("$_name")
 options=('!strip' '!debug')
-source_x86_64=("$url/releases/download/v$pkgver/$_name-$pkgver-linux-x86_64.tar.gz")
-source_aarch64=("$url/releases/download/v$pkgver/$_name-$pkgver-linux-aarch64.tar.gz")
+source_x86_64=("$url/releases/download/linux-v$pkgver/$_name-$pkgver-linux-x86_64.tar.gz")
+source_aarch64=("$url/releases/download/linux-v$pkgver/$_name-$pkgver-linux-aarch64.tar.gz")
 sha256sums_x86_64=('SKIP')
 sha256sums_aarch64=('SKIP')
 

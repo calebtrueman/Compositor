@@ -2,7 +2,9 @@ name: Verify
 
 on:
   push:
+    paths-ignore: ['linux/**', '.github/workflows/linux-*.yml']
   pull_request:
+    paths-ignore: ['linux/**', '.github/workflows/linux-*.yml']
 
 concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}

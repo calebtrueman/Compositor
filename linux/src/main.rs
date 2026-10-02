@@ -39,5 +39,16 @@ fn main() -> eframe::Result<()> {
         viewport = viewport.with_icon(icon);
     }
     let options = eframe::NativeOptions { viewport, persist_window: true, ..Default::default() };
-    eframe::run_native("Compositor", options, Box::new(move |cc| Ok(Box::new(app::App::new(cc, files)))))
+    if std::env::var_os("WAYLAND_DISPLAY").is_none() && std::env::var_os("DISPLAY").is_none() {
+        eprintln!("compositor: no display found. Run it from a graphical session (X11 or Wayland).");
+        std::process::exit(1);
+    }
+    let result = eframe::run_native("Compositor", options, Box::new(move |cc| Ok(Box::new(app::App::new(cc, files)))));
+    if let Err(error) = &result {
+        eprintln!(
+            "compositor: couldn't open a window: {error}\n\
+             Check that OpenGL (Mesa) and libxkbcommon-x11 are installed."
+        );
+    }
+    result
 }

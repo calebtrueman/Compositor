@@ -15,17 +15,17 @@ depends=('gcc-libs' 'glibc' 'hicolor-icon-theme' 'libglvnd' 'libx11' 'libxcursor
          'libxkbcommon' 'libxkbcommon-x11' 'libxrandr' 'wayland')
 makedepends=('cargo')
 conflicts=('compositor-image-editor-bin')
-source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/linux-v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 prepare() {
-  cd "Compositor-$pkgver/linux"
+  cd "Compositor-linux-v$pkgver/linux"
   export RUSTUP_TOOLCHAIN=stable
   cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
 }
 
 build() {
-  cd "Compositor-$pkgver/linux"
+  cd "Compositor-linux-v$pkgver/linux"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
   export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$srcdir=/build"
@@ -33,14 +33,14 @@ build() {
 }
 
 check() {
-  cd "Compositor-$pkgver/linux"
+  cd "Compositor-linux-v$pkgver/linux"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
   cargo test --frozen --release
 }
 
 package() {
-  cd "Compositor-$pkgver/linux"
+  cd "Compositor-linux-v$pkgver/linux"
   bash packaging/scripts/stage.sh target/release/compositor "$pkgdir" /usr
   install -Dm644 ../LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

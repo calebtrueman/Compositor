@@ -1,16 +1,16 @@
 name: Linux release
 
-# Pushing a tag vX.Y.Z (matching `version` in linux/Cargo.toml) builds Compositor for Linux on
+# Pushing a tag linux-vX.Y.Z (matching `version` in linux/Cargo.toml) builds Compositor for Linux on
 # x86_64 and aarch64 and publishes a GitHub Release with .deb, .rpm, AppImage, Arch, Flatpak and
 # .tar.gz packages plus SHA256SUMS. Running it by hand builds everything as workflow artifacts,
 # and with "publish" checked also creates a draft release. See linux/packaging/README.md.
 on:
   push:
-    tags: ['v*']
+    tags: ['linux-v*']
   workflow_dispatch:
     inputs:
       publish:
-        description: Also create a draft GitHub Release for v<version from linux/Cargo.toml>
+        description: Also create a draft GitHub Release for linux-v<version from linux/Cargo.toml>
         type: boolean
         default: false
 
@@ -39,7 +39,7 @@ jobs:
           version="$(sed -n 's/^version = "\(.*\)"$/\1/p' linux/Cargo.toml | head -n1)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Version $version"
-          if [ "$REF_TYPE" = tag ] && [ "$REF_NAME" != "v$version" ]; then
+          if [ "$REF_TYPE" = tag ] && [ "$REF_NAME" != "linux-v$version" ]; then
             echo "::error::Tag $REF_NAME does not match linux/Cargo.toml version $version"
             exit 1
           fi
@@ -263,7 +263,7 @@ jobs:
           IS_TAG: ${{ github.ref_type == 'tag' }}
         run: |
           set -eu
-          tag="v$VERSION"
+          tag="linux-v$VERSION"
           notes="Compositor $VERSION for Linux. Install instructions for every distro: https://github.com/$GH_REPO#linux"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/* --clobber
