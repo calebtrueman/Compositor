@@ -161,7 +161,7 @@ impl Tool for MarqueeTool {
             MarqueeStyle::FixedRatio => {
                 ui.label("W");
                 ui.add(egui::DragValue::new(&mut self.ratio.0).range(0.01..=1000.0).speed(0.05).max_decimals(3));
-                if ui.small_button("⇄").on_hover_text("Swap width and height").clicked() {
+                if ui.small_button(icons::ARROWS_LEFT_RIGHT).on_hover_text("Swap width and height").clicked() {
                     self.ratio = (self.ratio.1, self.ratio.0);
                 }
                 ui.label("H");
@@ -170,7 +170,7 @@ impl Tool for MarqueeTool {
             MarqueeStyle::FixedSize => {
                 ui.label("W");
                 ui.add(egui::DragValue::new(&mut self.size.0).range(1.0..=30_000.0).suffix(" px"));
-                if ui.small_button("⇄").on_hover_text("Swap width and height").clicked() {
+                if ui.small_button(icons::ARROWS_LEFT_RIGHT).on_hover_text("Swap width and height").clicked() {
                     self.size = (self.size.1, self.size.0);
                 }
                 ui.label("H");

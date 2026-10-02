@@ -1,14 +1,19 @@
 //! Move tool with transform controls: drag inside to move, drag a handle to scale (Shift keeps
 //! proportions), drag just outside a corner to rotate (Shift snaps to 15°). Ctrl-click selects
-//! the layer under the pointer. Arrow keys nudge.
+//! the layer under the pointer. Arrow keys nudge. With a selection, dragging inside it moves the
+//! selected pixels of the active layer (Alt-drag moves a copy).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use egui::{Color32, CursorIcon, Key, Modifiers, Painter, Stroke};
+use image::{GrayImage, RgbaImage};
+use rayon::prelude::*;
 
 use super::{PointerEvent, PointerPhase, Tool, ToolCtx, ToolKind};
-use crate::doc::{Affine, Document, Id, LayerTransform};
-use crate::project::Project;
+use crate::doc::{Affine, Document, Id, Layer, LayerTransform, MaskPixels, Selection};
+use crate::project::{EditTarget, Project};
+use crate::render::{self, Region, RenderCache};
 use crate::ui::canvas::ViewTransform;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -41,8 +46,210 @@ pub struct MoveTool {
     drag: Option<Drag>,
     start: HashMap<Id, LayerTransform>,
     start_frame: Option<Frame>,
+    pixels: Option<PixelMove>,
     pub show_controls: bool,
     pub auto_select: bool,
+}
+
+/// Selected pixels being dragged. Nothing changes until the pointer first moves; then the
+/// pixels are lifted out of the layer into a floating image, shown meanwhile by a temporary
+/// layer above it, and composited back on release. One undo step.
+struct PixelMove {
+    layer: Id,
+    duplicate: bool,
+    selection: Selection,
+    offset: (i64, i64),
+    lifted: Option<Lifted>,
+    /// Nothing visible was selected on the layer, so the drag does nothing.
+    empty: bool,
+}
+
+struct Lifted {
+    floating: Arc<RgbaImage>,
+    /// Document position of the floating image's top-left pixel before the move.
+    origin: (i64, i64),
+    preview: Id,
+}
+
+/// The active layer, when a press at `pos` should move its selected pixels: inside the selection,
+/// on a plain pixel layer's image (a scaled or turned layer is fine unless it has a mask).
+fn pixel_move_layer(project: &Project, pos: (f64, f64)) -> Option<Id> {
+    if project.target != EditTarget::Image {
+        return None;
+    }
+    let selection = project.doc.selection.as_ref()?;
+    if selection.coverage(pos.0.floor() as i64, pos.1.floor() as i64) < 128 {
+        return None;
+    }
+    let layer = project.doc.active_layer()?;
+    let image = layer.image.as_ref()?;
+    let plain = !layer.is_group && layer.adjustment.is_none() && layer.text.is_none() && layer.shape.is_none();
+    let placeable = layer.transform.is_pixel_aligned(image.width(), image.height()) || layer.mask.is_none();
+    (plain && placeable).then_some(layer.id)
+}
+
+/// Lifts the selected pixels of `pm.layer` into a floating image (cutting them from the layer
+/// unless duplicating) and starts the undo step. Changes nothing and returns `None` when no
+/// visible pixels are selected there.
+fn lift(project: &mut Project, pm: &PixelMove, cache: &RenderCache) -> Option<Lifted> {
+    let layer = project.doc.layer(pm.layer)?;
+    let image = layer.image.clone()?;
+    // Work in whole document pixels: a scaled or turned layer is first redrawn at canvas resolution.
+    let (mut image, transform) = if layer.transform.is_pixel_aligned(image.width(), image.height()) {
+        (image, layer.transform)
+    } else {
+        let b = layer.transform.bounds();
+        let (x0, y0, x1, y1) = (b.0.floor(), b.1.floor(), b.2.ceil(), b.3.ceil());
+        let region = Region { x: x0 as i64, y: y0 as i64, width: (x1 - x0) as usize, height: (y1 - y0) as usize, scale: 1.0 };
+        let placed = render::place_layer(layer, region, cache)?.to_rgba8();
+        let mut t = LayerTransform::rect(x0, y0, x1 - x0, y1 - y0);
+        t.sampling = layer.transform.sampling;
+        (Arc::new(placed), t)
+    };
+    let (ox, oy) = (transform.origin[0] as i64, transform.origin[1] as i64);
+    let (w, h) = (image.width() as i64, image.height() as i64);
+    let sb = pm.selection.bounds;
+    let (rx0, ry0) = ((sb.0 as i64).max(ox), (sb.1 as i64).max(oy));
+    let (rx1, ry1) = ((sb.2 as i64).min(ox + w), (sb.3 as i64).min(oy + h));
+    if rx0 >= rx1 || ry0 >= ry1 {
+        return None;
+    }
+    let (rw, rh) = ((rx1 - rx0) as usize, (ry1 - ry0) as usize);
+    let selection = &pm.selection;
+    let mut floating = RgbaImage::new(rw as u32, rh as u32);
+    floating.par_chunks_mut(rw * 4).enumerate().for_each(|(j, row)| {
+        let y = ry0 + j as i64;
+        for (i, out) in row.chunks_exact_mut(4).enumerate() {
+            let x = rx0 + i as i64;
+            let p = image.get_pixel((x - ox) as u32, (y - oy) as u32);
+            let c = selection.coverage(x, y) as u32;
+            out.copy_from_slice(&[p[0], p[1], p[2], ((p[3] as u32 * c + 127) / 255) as u8]);
+        }
+    });
+    if floating.pixels().all(|p| p[3] == 0) {
+        return None;
+    }
+    if !pm.duplicate {
+        let pixels = Arc::make_mut(&mut image);
+        let stride = w as usize * 4;
+        pixels.par_chunks_mut(stride).enumerate().skip((ry0 - oy) as usize).take(rh).for_each(|(py, row)| {
+            let y = oy + py as i64;
+            for x in rx0..rx1 {
+                let c = selection.coverage(x, y) as u32;
+                let a = &mut row[(x - ox) as usize * 4 + 3];
+                *a = ((*a as u32 * (255 - c) + 127) / 255) as u8;
+            }
+        });
+    }
+    project.begin_edit(if pm.duplicate { "Duplicate Pixels" } else { "Move Pixels" });
+    let layer = project.doc.layer_mut(pm.layer)?;
+    layer.image = Some(image);
+    layer.transform = transform;
+    layer.rasterized();
+    let floating = Arc::new(floating);
+    let mut preview = Layer::blank("Moving Pixels", LayerTransform::rect(rx0 as f64, ry0 as f64, rw as f64, rh as f64));
+    preview.image = Some(floating.clone());
+    preview.parent = layer.parent;
+    preview.opacity = layer.opacity;
+    preview.blend = layer.blend;
+    preview.clip_source = layer.clip_source;
+    let preview_id = preview.id;
+    let index = project.doc.index_of(pm.layer)?;
+    project.doc.layers.insert(index + 1, preview);
+    Some(Lifted { floating, origin: (rx0, ry0), preview: preview_id })
+}
+
+/// Composites straight-alpha `floating` over a pixel-aligned layer with its top-left pixel at
+/// document position `at`, growing the layer's image to hold it.
+pub fn paste_into(layer: &mut Layer, floating: &RgbaImage, at: (i64, i64)) {
+    let Some(image) = layer.image.as_mut() else { return };
+    let (ox, oy) = (layer.transform.origin[0].round() as i64, layer.transform.origin[1].round() as i64);
+    let (w, h) = (image.width() as i64, image.height() as i64);
+    let (fw, fh) = (floating.width() as i64, floating.height() as i64);
+    let (nx0, ny0) = (ox.min(at.0), oy.min(at.1));
+    let (nx1, ny1) = ((ox + w).max(at.0 + fw), (oy + h).max(at.1 + fh));
+    if (nx0, ny0, nx1, ny1) != (ox, oy, ox + w, oy + h) {
+        let mut grown = RgbaImage::new((nx1 - nx0) as u32, (ny1 - ny0) as u32);
+        image::imageops::replace(&mut grown, &**image, ox - nx0, oy - ny0);
+        *image = Arc::new(grown);
+        let old = layer.transform;
+        layer.transform.origin = [nx0 as f64, ny0 as f64];
+        layer.transform.size = [(nx1 - nx0) as f64, (ny1 - ny0) as f64];
+        if let Some(mask) = layer.mask.as_mut().filter(|m| m.linked) {
+            match &mask.pixels {
+                // A mask the image's size grows with it, extended by its corner value.
+                MaskPixels::Pixels(gray) if gray.dimensions() == (w as u32, h as u32) => {
+                    let fill = gray.get_pixel(0, 0)[0];
+                    let mut grown = GrayImage::from_pixel((nx1 - nx0) as u32, (ny1 - ny0) as u32, image::Luma([fill]));
+                    image::imageops::replace(&mut grown, &**gray, ox - nx0, oy - ny0);
+                    mask.pixels = MaskPixels::Pixels(Arc::new(grown));
+                }
+                // Any other mask stays where it was.
+                MaskPixels::Pixels(_) => {
+                    mask.linked = false;
+                    mask.placement = Some(old);
+                }
+                MaskPixels::Uniform(_) => {}
+            }
+        }
+    }
+    let pixels = Arc::make_mut(image);
+    let stride = pixels.width() as usize * 4;
+    let (dx, dy) = ((at.0 - nx0) as usize, (at.1 - ny0) as usize);
+    pixels.par_chunks_mut(stride).skip(dy).take(fh as usize).enumerate().for_each(|(j, row)| {
+        for i in 0..fw as usize {
+            let src = floating.get_pixel(i as u32, j as u32);
+            let sa = src[3] as f32 / 255.0;
+            if sa <= 0.0 {
+                continue;
+            }
+            let dst = &mut row[(dx + i) * 4..(dx + i) * 4 + 4];
+            let da = dst[3] as f32 / 255.0;
+            let oa = sa + da * (1.0 - sa);
+            for c in 0..3 {
+                let v = (src[c] as f32 * sa + dst[c] as f32 * da * (1.0 - sa)) / oa;
+                dst[c] = v.round().clamp(0.0, 255.0) as u8;
+            }
+            dst[3] = (oa * 255.0).round() as u8;
+        }
+    });
+    layer.rasterized();
+}
+
+impl PixelMove {
+    fn drag(&mut self, project: &mut Project, offset: (i64, i64), cache: &RenderCache) {
+        if offset == self.offset {
+            return;
+        }
+        if self.lifted.is_none() {
+            if self.empty {
+                return;
+            }
+            self.lifted = lift(project, self, cache);
+            if self.lifted.is_none() {
+                self.empty = true;
+                return;
+            }
+        }
+        self.offset = offset;
+        let Some(lifted) = &self.lifted else { return };
+        if let Some(preview) = project.doc.layer_mut(lifted.preview) {
+            preview.transform.origin = [(lifted.origin.0 + offset.0) as f64, (lifted.origin.1 + offset.1) as f64];
+        }
+        project.doc.selection = crate::selection::translated(&self.selection, offset.0, offset.1);
+        project.invalidate_all();
+    }
+
+    fn finish(self, project: &mut Project) {
+        let Some(lifted) = self.lifted else { return };
+        project.doc.layers.retain(|l| l.id != lifted.preview);
+        let at = (lifted.origin.0 + self.offset.0, lifted.origin.1 + self.offset.1);
+        if let Some(layer) = project.doc.layer_mut(self.layer) {
+            paste_into(layer, &lifted.floating, at);
+        }
+        project.finish_edit();
+        project.invalidate_all();
+    }
 }
 
 /// Layers a move acts on: the selected ones, with folders standing for everything inside them.
@@ -181,6 +388,16 @@ impl Tool for MoveTool {
     fn pointer(&mut self, event: &PointerEvent, ctx: &mut ToolCtx) {
         match event.phase {
             PointerPhase::Press => {
+                let on_handle = self.show_controls
+                    && frame_for(&ctx.project.doc, &move_targets(&ctx.project.doc))
+                        .is_some_and(|f| matches!(self.hit(&f, event.pos, ctx.zoom), Some(Drag::Scale(_) | Drag::Rotate)));
+                if !event.modifiers.command && !on_handle {
+                    if let Some(layer) = pixel_move_layer(ctx.project, event.pos) {
+                        let selection = ctx.project.doc.selection.clone().unwrap();
+                        self.pixels = Some(PixelMove { layer, duplicate: event.modifiers.alt, selection, offset: (0, 0), lifted: None, empty: false });
+                        return;
+                    }
+                }
                 if self.auto_select || event.modifiers.command {
                     let hit = topmost_at(&ctx.project.doc, event.pos, ctx.project);
                     if let Some(id) = hit {
@@ -215,6 +432,19 @@ impl Tool for MoveTool {
                 ctx.project.begin_edit(name);
             }
             PointerPhase::Drag => {
+                if let Some(pixels) = &mut self.pixels {
+                    let (mut dx, mut dy) =
+                        ((event.pos.0 - event.press_origin.0).round() as i64, (event.pos.1 - event.press_origin.1).round() as i64);
+                    if event.modifiers.shift {
+                        if dx.abs() > dy.abs() {
+                            dy = 0;
+                        } else {
+                            dx = 0;
+                        }
+                    }
+                    pixels.drag(ctx.project, (dx, dy), ctx.cache);
+                    return;
+                }
                 let (Some(drag), Some(frame)) = (self.drag, self.start_frame) else { return };
                 let (sx, sy) = event.press_origin;
                 let (x, y) = event.pos;
@@ -274,7 +504,12 @@ impl Tool for MoveTool {
                 self.apply(&mut ctx.project.doc, &map);
                 ctx.project.invalidate_all();
             }
-            PointerPhase::Release => self.finish(ctx.project),
+            PointerPhase::Release => {
+                if let Some(pixels) = self.pixels.take() {
+                    pixels.finish(ctx.project);
+                }
+                self.finish(ctx.project);
+            }
             _ => {}
         }
     }
@@ -309,6 +544,12 @@ impl Tool for MoveTool {
         }
     }
 
+    fn commit(&mut self, ctx: &mut ToolCtx) {
+        if let Some(pixels) = self.pixels.take() {
+            pixels.finish(ctx.project);
+        }
+    }
+
     fn cursor(&self, project: &Project, hover: (f64, f64), _modifiers: Modifiers) -> CursorIcon {
         if !self.show_controls {
             return CursorIcon::Move;
@@ -333,5 +574,66 @@ impl Tool for MoveTool {
 pub fn show_controls(tools: &mut super::Tools, on: bool) {
     if let Some(tool) = tools.get_mut(ToolKind::Move) {
         tool.set_transform_controls(on);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::Luma;
+
+    fn project_with_selection() -> Project {
+        let mut doc = Document::new(10, 10, Some([255, 0, 0, 255]));
+        let mask = GrayImage::from_fn(10, 10, |x, y| Luma([if (2..4).contains(&x) && (2..4).contains(&y) { 255 } else { 0 }]));
+        doc.selection = Selection::from_mask(mask);
+        Project::new(doc, None, "Test".into())
+    }
+
+    fn drag_pixels(project: &mut Project, duplicate: bool, offset: (i64, i64)) {
+        let cache = RenderCache::default();
+        let layer = pixel_move_layer(project, (2.5, 2.5)).expect("inside the selection");
+        let selection = project.doc.selection.clone().unwrap();
+        let mut pm = PixelMove { layer, duplicate, selection, offset: (0, 0), lifted: None, empty: false };
+        pm.drag(project, offset, &cache);
+        assert_eq!(project.doc.layers.len(), 2, "a preview layer while dragging");
+        pm.finish(project);
+    }
+
+    #[test]
+    fn moves_selected_pixels() {
+        let mut project = project_with_selection();
+        drag_pixels(&mut project, false, (5, 0));
+        assert_eq!(project.doc.layers.len(), 1);
+        let image = project.doc.layers[0].image.as_ref().unwrap();
+        assert_eq!(image.get_pixel(2, 2)[3], 0);
+        assert_eq!(image.get_pixel(7, 2)[3], 255);
+        assert_eq!(project.doc.selection.as_ref().unwrap().bounds, (7, 2, 9, 4));
+        // One undo step puts everything back.
+        project.undo();
+        assert_eq!(project.doc.layers[0].image.as_ref().unwrap().get_pixel(2, 2)[3], 255);
+        assert_eq!(project.doc.selection.as_ref().unwrap().bounds, (2, 2, 4, 4));
+    }
+
+    #[test]
+    fn alt_drag_duplicates() {
+        let mut project = project_with_selection();
+        project.edit("Paint", |doc| {
+            let image = Arc::make_mut(doc.layers[0].image.as_mut().unwrap());
+            image.put_pixel(2, 2, image::Rgba([0, 0, 255, 255]));
+        });
+        drag_pixels(&mut project, true, (0, 3));
+        let image = project.doc.layers[0].image.as_ref().unwrap();
+        assert_eq!(*image.get_pixel(2, 2), image::Rgba([0, 0, 255, 255]));
+        assert_eq!(*image.get_pixel(2, 5), image::Rgba([0, 0, 255, 255]));
+    }
+
+    #[test]
+    fn pixels_moved_off_the_layer_grow_it() {
+        let mut project = project_with_selection();
+        drag_pixels(&mut project, false, (-5, 0));
+        let layer = &project.doc.layers[0];
+        assert_eq!(layer.transform.origin, [-3.0, 0.0]);
+        assert_eq!(layer.image.as_ref().unwrap().dimensions(), (13, 10));
+        assert_eq!(layer.image.as_ref().unwrap().get_pixel(0, 2)[3], 255);
     }
 }
