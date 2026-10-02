@@ -1,0 +1,275 @@
+name: Linux release
+
+# Pushing a tag vX.Y.Z (matching `version` in linux/Cargo.toml) builds Compositor for Linux on
+# x86_64 and aarch64 and publishes a GitHub Release with .deb, .rpm, AppImage, Arch, Flatpak and
+# .tar.gz packages plus SHA256SUMS. Running it by hand builds everything as workflow artifacts,
+# and with "publish" checked also creates a draft release. See linux/packaging/README.md.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Also create a draft GitHub Release for v<version from linux/Cargo.toml>
+        type: boolean
+        default: false
+
+concurrency:
+  group: linux-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  meta:
+    name: version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read and check the version
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' linux/Cargo.toml | head -n1)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version $version"
+          if [ "$REF_TYPE" = tag ] && [ "$REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $REF_NAME does not match linux/Cargo.toml version $version"
+            exit 1
+          fi
+          if ! grep -q "<release version=\"$version\"" linux/packaging/io.github.calebtrueman.Compositor.metainfo.xml; then
+            echo "::warning::linux/packaging/io.github.calebtrueman.Compositor.metainfo.xml has no <release> entry for $version"
+          fi
+
+  # One binary per architecture, built on Ubuntu 20.04 (glibc 2.31) so it runs on any distro
+  # from that era onwards, then packaged as .deb, .rpm, .tar.gz and AppImage.
+  build:
+    name: build (${{ matrix.arch }})
+    needs: meta
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container: ubuntu:20.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install build tools
+        run: |
+          bash linux/packaging/scripts/setup-build-env.sh
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        working-directory: linux
+        run: cargo build --release --locked
+
+      - name: Test
+        working-directory: linux
+        run: cargo test --release --locked
+
+      - name: Show linkage
+        working-directory: linux
+        run: |
+          file target/release/compositor
+          ldd target/release/compositor
+          echo "Newest glibc symbol: $(objdump -T target/release/compositor | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n1)"
+
+      - name: Package
+        run: bash linux/packaging/scripts/package.sh "$GITHUB_WORKSPACE/dist"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  # Installs the packages on current distros and checks the binary starts and resolves its
+  # libraries (including the ones it dlopens).
+  smoke-test:
+    name: smoke test (${{ matrix.image }}, ${{ matrix.arch }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+        image: ['debian:bookworm', 'ubuntu:24.04', 'fedora:latest', 'opensuse/tumbleweed']
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist
+
+      - name: Install the package
+        run: |
+          set -eu
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/*.deb
+          elif command -v dnf >/dev/null; then
+            dnf install -y ./dist/*.rpm
+          else
+            zypper --non-interactive install --allow-unsigned-rpm ./dist/*.rpm
+          fi
+
+      - name: Check the binary
+        run: |
+          set -eu
+          compositor --version
+          if ldd /usr/bin/compositor | grep 'not found'; then exit 1; fi
+          for lib in libGL.so.1 libEGL.so.1 libxkbcommon.so.0 libxkbcommon-x11.so.0 libX11.so.6 \
+                     libXcursor.so.1 libXrandr.so.2 libXi.so.6 libwayland-client.so.0 \
+                     libwayland-cursor.so.0 libwayland-egl.so.1; do
+            ldconfig -p | grep -q "$lib" || { echo "::error::$lib is not installed"; exit 1; }
+          done
+          test -f /usr/share/applications/io.github.calebtrueman.Compositor.desktop
+          test -f /usr/share/icons/hicolor/256x256/apps/io.github.calebtrueman.Compositor.png
+
+  arch:
+    name: arch package (x86_64)
+    needs: [meta, build]
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-x86_64
+          path: dist
+
+      - name: Build with makepkg
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -eu
+          # pacman's Landlock download sandbox fails under some container runtimes; this
+          # container is throwaway, so turn it off.
+          grep -q '^DisableSandbox' /etc/pacman.conf || sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+          pacman -Syu --noconfirm --needed base-devel pacman-contrib
+          useradd -m builder
+          mkdir /tmp/pkg
+          cp linux/packaging/arch-bin/PKGBUILD /tmp/pkg/
+          cp "dist/compositor-image-editor-$VERSION-linux-x86_64.tar.gz" /tmp/pkg/
+          # Point the PKGBUILD at this version and the tarball beside it (updpkgsums would try to
+          # download the other architecture's tarball from a release that does not exist yet).
+          sum="$(sha256sum "/tmp/pkg/compositor-image-editor-$VERSION-linux-x86_64.tar.gz" | cut -d' ' -f1)"
+          sed -i -e "s/^pkgver=.*/pkgver=$VERSION/" -e "s/^pkgrel=.*/pkgrel=1/" \
+            -e "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('$sum')/" /tmp/pkg/PKGBUILD
+          chown -R builder /tmp/pkg
+          cd /tmp/pkg
+          su builder -c 'PKGEXT=.pkg.tar.zst makepkg --force --nodeps'
+          pacman -U --noconfirm ./*.pkg.tar.zst
+          compositor --version
+          if ldd /usr/bin/compositor | grep 'not found'; then exit 1; fi
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp ./*.pkg.tar.zst "$GITHUB_WORKSPACE/out/"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-arch-x86_64
+          path: out/*
+          if-no-files-found: error
+
+  flatpak:
+    name: flatpak (${{ matrix.arch }})
+    needs: [meta, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist
+
+      - name: Install flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder dbus-daemon
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Build the bundle
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -eu
+          cd linux/packaging/flatpak
+          cp "$GITHUB_WORKSPACE/dist/compositor-image-editor-$VERSION-linux-$ARCH.tar.gz" compositor-prebuilt.tar.gz
+          flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse \
+            --repo=repo --force-clean build io.github.calebtrueman.Compositor.yml
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          flatpak build-bundle repo "$GITHUB_WORKSPACE/out/Compositor-$VERSION-$ARCH.flatpak" \
+            io.github.calebtrueman.Compositor \
+            --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
+          # Install the bundle and start it once, inside a private session bus.
+          dbus-run-session -- flatpak install --user --noninteractive --bundle "$GITHUB_WORKSPACE/out/Compositor-$VERSION-$ARCH.flatpak"
+          dbus-run-session -- flatpak run io.github.calebtrueman.Compositor --version
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-flatpak-${{ matrix.arch }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: [meta, build, smoke-test, arch, flatpak]
+    if: github.ref_type == 'tag' || inputs.publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: linux-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          IS_TAG: ${{ github.ref_type == 'tag' }}
+        run: |
+          set -eu
+          tag="v$VERSION"
+          notes="Compositor $VERSION for Linux. Install instructions for every distro: https://github.com/$GH_REPO#linux"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          elif [ "$IS_TAG" = true ]; then
+            gh release create "$tag" dist/* --title "Compositor $VERSION" --notes "$notes" --verify-tag
+          else
+            gh release create "$tag" dist/* --title "Compositor $VERSION" --notes "$notes" \
+              --draft --target "$GITHUB_SHA"
+          fi
