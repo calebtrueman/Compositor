@@ -1,9 +1,17 @@
 //! Canvas tools. Each tool is a `Tool` in its own file; `Tools::new` lists them in toolbar order.
 
+pub mod blur;
+pub mod brush;
+pub mod clone_stamp;
+pub mod eraser;
 pub mod eyedropper;
+pub mod gradient;
 pub mod hand;
 pub mod move_tool;
+pub mod paint;
+pub mod paint_bucket;
 pub mod shape;
+pub mod spot_healing;
 
 use egui::{Color32, CursorIcon, Key, Modifiers, Painter};
 
@@ -131,6 +139,13 @@ impl Tools {
         let list: Vec<Box<dyn Tool>> = vec![
             Box::new(move_tool::MoveTool::default()),
             Box::new(eyedropper::Eyedropper::default()),
+            Box::new(spot_healing::SpotHealingTool::default()),
+            Box::new(brush::BrushTool::default()),
+            Box::new(eraser::EraserTool::default()),
+            Box::new(clone_stamp::CloneStampTool::default()),
+            Box::new(blur::BlurTool::default()),
+            Box::new(gradient::GradientTool::default()),
+            Box::new(paint_bucket::PaintBucketTool::default()),
             Box::new(shape::ShapeTool::default()),
             Box::new(hand::HandTool),
             Box::new(hand::ZoomTool),
